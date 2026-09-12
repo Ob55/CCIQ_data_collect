@@ -4,6 +4,7 @@
 import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getCurrentUser } from '@/lib/auth'
 
 export const ATTACHMENT_BUCKET = 'attachments'
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // §10
@@ -12,9 +13,32 @@ export const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // §10
 // Loading forms to fill
 // ---------------------------------------------------------------------------
 
-/** Deployed forms the current user is assigned to fill (§7 "My forms"). */
+/** Deployed forms the current user is assigned to fill (§7 "My forms"). Admins see every
+ * deployed form, since they may fill anything (assignment is not required for admins). */
 export async function listFillableForms() {
   const supabase = await createClient()
+
+  const current = await getCurrentUser()
+  if (current?.profile.role === 'admin') {
+    // Admins can fill any deployed form — list one entry per form with a deployed version.
+    const { data: deployed } = await supabase
+      .from('form_versions')
+      .select('form_id, forms(id, title, slug, description)')
+      .eq('status', 'deployed')
+    const byForm = new Map()
+    for (const v of deployed ?? []) {
+      if (v.forms && !byForm.has(v.form_id)) {
+        byForm.set(v.form_id, {
+          id: v.forms.id,
+          title: v.forms.title,
+          slug: v.forms.slug,
+          description: v.forms.description,
+        })
+      }
+    }
+    return [...byForm.values()]
+  }
+
   const { data: asgs } = await supabase
     .from('assignments')
     .select('form_id, forms(id, title, slug, description)')
@@ -58,13 +82,17 @@ export async function getFillContext(slug) {
     .maybeSingle()
   if (!version) return null
 
+  const current = await getCurrentUser()
+  const isAdmin = current?.profile.role === 'admin'
+
   const { data: assignment } = await supabase
     .from('assignments')
     .select('can_fill')
     .eq('form_id', form.id)
     .maybeSingle()
 
-  return { form, version, canFill: Boolean(assignment?.can_fill) }
+  // Admins may fill any deployed form; everyone else needs a can_fill assignment.
+  return { form, version, canFill: isAdmin || Boolean(assignment?.can_fill) }
 }
 
 /** The current user's own submissions, newest first (§7 "My submissions"). */
