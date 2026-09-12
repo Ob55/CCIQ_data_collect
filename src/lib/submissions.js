@@ -95,12 +95,17 @@ export async function getFillContext(slug) {
   return { form, version, canFill: isAdmin || Boolean(assignment?.can_fill) }
 }
 
-/** The current user's own submissions, newest first (§7 "My submissions"). */
+/** The current user's own submissions, newest first (§7 "My submissions"). Explicitly scoped
+ * to submitted_by = me, so an enumerator who happens to hold a review grant still only sees
+ * their OWN submissions here (RLS alone would also expose reviewable rows). */
 export async function listMySubmissions() {
   const supabase = await createClient()
+  const current = await getCurrentUser()
+  if (!current) return []
   const { data } = await supabase
     .from('submissions')
     .select('id, status, submitted_at, form_versions(version_no, forms(id, title))')
+    .eq('submitted_by', current.user.id)
     .order('submitted_at', { ascending: false })
   return (data ?? []).map((s) => ({
     id: s.id,
