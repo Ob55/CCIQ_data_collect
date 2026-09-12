@@ -100,13 +100,14 @@ export async function listMySubmissions() {
   const supabase = await createClient()
   const { data } = await supabase
     .from('submissions')
-    .select('id, status, submitted_at, form_versions(version_no, forms(title))')
+    .select('id, status, submitted_at, form_versions(version_no, forms(id, title))')
     .order('submitted_at', { ascending: false })
   return (data ?? []).map((s) => ({
     id: s.id,
     status: s.status,
     submitted_at: s.submitted_at,
     version_no: s.form_versions?.version_no ?? null,
+    form_id: s.form_versions?.forms?.id ?? 'unknown',
     form_title: s.form_versions?.forms?.title ?? 'Form',
   }))
 }

@@ -10,6 +10,7 @@ import { DashboardPage } from '@/pages/DashboardPage'
 import { MyFormsPage } from '@/pages/MyFormsPage'
 import { FillFormPage } from '@/pages/FillFormPage'
 import { MySubmissionsPage } from '@/pages/MySubmissionsPage'
+import { FormSubmissionsPage } from '@/pages/FormSubmissionsPage'
 import { SubmissionDetailPage } from '@/pages/SubmissionDetailPage'
 import { FormsPage } from '@/pages/FormsPage'
 import { NewFormPage } from '@/pages/NewFormPage'
@@ -42,6 +43,7 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/my-forms" element={<MyFormsPage />} />
         <Route path="/my-submissions" element={<MySubmissionsPage />} />
+        <Route path="/my-submissions/:formId" element={<FormSubmissionsPage />} />
         <Route path="/f/:slug" element={<FillFormPage />} />
         <Route path="/submissions/:id" element={<SubmissionDetailPage />} />
 

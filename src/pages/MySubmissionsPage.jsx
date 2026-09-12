@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Inbox, ChevronRight } from 'lucide-react'
+import { Inbox, FileText, ArrowRight } from 'lucide-react'
 import { useAuth } from '@/auth/AuthProvider'
 import { listMySubmissions, listAllSubmissions } from '@/lib/submissions'
 import { useAsync } from '@/lib/use-async'
@@ -9,132 +9,102 @@ import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Loading, ErrorState } from '@/components/page-state'
 
+// Submissions landing: one card per form (like My Forms). Clicking a card opens all
+// submissions for that form (/my-submissions/:formId). Managers see everyone's submissions;
+// enumerators see their own. RLS already scopes what each role can read.
 export function MySubmissionsPage() {
   const { profile } = useAuth()
   const isManager = profile?.role === 'admin' || profile?.role === 'supervisor'
-  return isManager ? <AllSubmissions /> : <MySubmissions />
-}
 
-// Admin / supervisor: every submission, grouped by form.
-function AllSubmissions() {
-  const { data: subs, loading, error } = useAsync(() => listAllSubmissions(), [])
-
-  if (loading) return <Wrap><Loading /></Wrap>
-  if (error) return <Wrap><ErrorState message={error} /></Wrap>
-
-  const groups = new Map()
-  for (const s of subs) {
-    if (!groups.has(s.form_id)) groups.set(s.form_id, { title: s.form_title, items: [] })
-    groups.get(s.form_id).items.push(s)
-  }
-  const forms = [...groups.values()].sort((a, b) => a.title.localeCompare(b.title))
-
-  return (
-    <Wrap>
-      {subs.length === 0 ? (
-        <EmptyState text="No submissions yet across any form." />
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Total submissions" value={subs.length} />
-            <StatCard label="Forms with data" value={forms.length} />
-            <StatCard label="Awaiting review" value={subs.filter((s) => s.status === 'new').length} />
-          </div>
-
-          <div className="space-y-4">
-            {forms.map((g) => (
-              <Card key={g.title} className="overflow-hidden">
-                <details open>
-                  <summary className="flex cursor-pointer items-center justify-between gap-3 border-b bg-muted/40 p-4 font-medium">
-                    <span className="truncate">{g.title}</span>
-                    <Badge variant="default">{g.items.length}</Badge>
-                  </summary>
-                  <ul className="divide-y">
-                    {g.items.map((s) => (
-                      <li key={s.id}>
-                        <Link
-                          to={`/submissions/${s.id}`}
-                          className="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-accent"
-                        >
-                          <div className="min-w-0">
-                            <div className="truncate font-medium">{s.submitter_name}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {s.submitted_by_role} · v{s.version_no} ·{' '}
-                              {new Date(s.submitted_at).toLocaleString()}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={s.status}>{s.status}</Badge>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </Card>
-            ))}
-          </div>
-        </>
-      )}
-    </Wrap>
+  const { data: subs, loading, error } = useAsync(
+    () => (isManager ? listAllSubmissions() : listMySubmissions()),
+    [isManager]
   )
-}
 
-// Enumerator: their own submissions with status.
-function MySubmissions() {
-  const { data: submissions, loading, error } = useAsync(() => listMySubmissions(), [])
-
-  if (loading) return <Wrap><Loading /></Wrap>
-  if (error) return <Wrap><ErrorState message={error} /></Wrap>
-
-  const count = (status) => submissions.filter((s) => s.status === status).length
-
-  return (
-    <Wrap>
-      {submissions.length === 0 ? (
-        <EmptyState text="Forms you complete will appear here with their status." />
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-4">
-            <StatCard label="Total" value={submissions.length} />
-            <StatCard label="Approved" value={count('approved')} />
-            <StatCard label="Awaiting review" value={count('new')} />
-            <StatCard label="Needs changes" value={count('flagged') + count('rejected')} />
-          </div>
-
-          <Card className="divide-y">
-            {submissions.map((s) => (
-              <Link
-                key={s.id}
-                to={`/submissions/${s.id}`}
-                className="flex items-center justify-between gap-4 p-4 transition-colors hover:bg-accent"
-              >
-                <div className="min-w-0">
-                  <div className="truncate font-medium">{s.form_title}</div>
-                  <div className="text-xs text-muted-foreground">
-                    v{s.version_no} · {new Date(s.submitted_at).toLocaleString()}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={s.status}>{s.status}</Badge>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </Link>
-            ))}
-          </Card>
-        </>
-      )}
-    </Wrap>
-  )
-}
-
-function Wrap({ children }) {
   return (
     <div className="space-y-6">
-      <PageHeader title="Submissions" description="Everything submitted and its review status." />
-      {children}
+      <PageHeader
+        title="Submissions"
+        description={
+          isManager
+            ? 'Pick a form to see its submissions.'
+            : "Pick a form to see everything you've submitted."
+        }
+      />
+
+      {loading ? (
+        <Loading />
+      ) : error ? (
+        <ErrorState message={error} />
+      ) : subs.length === 0 ? (
+        <EmptyState
+          text={
+            isManager
+              ? 'No submissions yet across any form.'
+              : 'Forms you complete will appear here, grouped by form.'
+          }
+        />
+      ) : (
+        <SubmissionCards subs={subs} isManager={isManager} />
+      )}
     </div>
+  )
+}
+
+function SubmissionCards({ subs, isManager }) {
+  // Group by form, newest activity first.
+  const byForm = new Map()
+  for (const s of subs) {
+    if (!byForm.has(s.form_id)) {
+      byForm.set(s.form_id, {
+        form_id: s.form_id,
+        title: s.form_title,
+        total: 0,
+        awaiting: 0,
+        latest: s.submitted_at,
+      })
+    }
+    const g = byForm.get(s.form_id)
+    g.total += 1
+    if (s.status === 'new') g.awaiting += 1
+    if (s.submitted_at > g.latest) g.latest = s.submitted_at
+  }
+  const forms = [...byForm.values()].sort((a, b) => (a.latest < b.latest ? 1 : -1))
+
+  const totalAwaiting = subs.filter((s) => s.status === 'new').length
+
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="Total submissions" value={subs.length} />
+        <StatCard label="Forms with data" value={forms.length} />
+        <StatCard label={isManager ? 'Awaiting review' : 'Awaiting review'} value={totalAwaiting} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {forms.map((f) => (
+          <Link key={f.form_id} to={`/my-submissions/${f.form_id}`} className="group">
+            <Card className="flex h-full flex-col p-5 transition-colors hover:border-primary hover:bg-accent">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="w-fit rounded-md bg-muted p-2 text-muted-foreground">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <Badge variant="default">{f.total}</Badge>
+              </div>
+              <div className="font-medium">{f.title}</div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                {f.total} submission{f.total === 1 ? '' : 's'}
+                {f.awaiting > 0 ? ` · ${f.awaiting} awaiting review` : ''}
+              </div>
+              <div className="mt-4 flex items-center gap-1 text-sm font-medium text-primary">
+                View submissions
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </div>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </>
   )
 }
 
