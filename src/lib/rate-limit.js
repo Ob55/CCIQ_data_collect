@@ -2,7 +2,7 @@
 // Shared rate limiter backed by Postgres (PRD §10) via the rate_limit_hit() function.
 // Works across all serverless instances. Fails OPEN on limiter errors so a limiter outage
 // never blocks legitimate submissions.
-import { createAdminClient } from '@/lib/supabase/admin'
+import { supabase } from '@/lib/supabase'
 
 /**
  * @param {string} key            identity to limit on (e.g. `submit:<userId>`)
@@ -12,8 +12,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
  */
 export async function rateLimit(key, limit = 30, windowSeconds = 60) {
   try {
-    const admin = createAdminClient()
-    const { data, error } = await admin.rpc('rate_limit_hit', {
+    // rate_limit_hit is SECURITY DEFINER, so the authenticated client may call it directly.
+    const { data, error } = await supabase.rpc('rate_limit_hit', {
       p_key: key,
       p_limit: limit,
       p_window_seconds: windowSeconds,

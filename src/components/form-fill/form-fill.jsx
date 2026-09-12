@@ -1,7 +1,6 @@
-'use client'
-
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { FieldInput } from './field-input'
+import { submitFilledForm } from '@/lib/submissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import {
@@ -164,21 +163,15 @@ export function FormFill({ form, version }) {
     try {
       const data = buildData(schema.fields, values, values)
       const attachments = collectAttachments(data)
-      const res = await fetch('/api/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: submissionId,
-          form_version_id: version.id,
-          data,
-          started_at: startedAt ? new Date(startedAt).toISOString() : undefined,
-          duration_seconds: startedAt ? Math.round((Date.now() - startedAt) / 1000) : undefined,
-          user_agent: navigator.userAgent,
-          attachments,
-        }),
+      await submitFilledForm({
+        id: submissionId,
+        form_version_id: version.id,
+        data,
+        started_at: startedAt ? new Date(startedAt).toISOString() : undefined,
+        duration_seconds: startedAt ? Math.round((Date.now() - startedAt) / 1000) : undefined,
+        user_agent: navigator.userAgent,
+        attachments,
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Submission failed.')
       localStorage.removeItem(storageKey)
       setDone(true)
     } catch (e) {

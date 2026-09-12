@@ -1,10 +1,8 @@
 // @ts-check
 // Export service (PRD §9). Reads submissions through RLS (so supervisors only export forms
 // they can review, admins all), flattens them into XLSX/CSV, and writes an audit entry.
-import 'server-only'
 import * as XLSX from 'xlsx'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient, supabase } from '@/lib/supabase'
 import { signedAttachmentUrl } from '@/lib/submissions'
 import { mergeSchemas, buildSheets, collectImagePaths } from '@/lib/export-build'
 
@@ -130,13 +128,11 @@ export async function generateExport({
   const truncated = prepared.length >= EXPORT_ROW_CAP
 
   // Audit every export (§9).
-  const admin = createAdminClient()
-  await admin.from('audit_log').insert({
-    actor_id: userId,
-    entity_type: 'form',
-    entity_id: formId,
-    action: 'export',
-    meta: { format, headerMode, status, from, to, rows: prepared.length, truncated },
+  await supabase.rpc('log_audit', {
+    p_entity_type: 'form',
+    p_entity_id: formId,
+    p_action: 'export',
+    p_meta: { format, headerMode, status, from, to, rows: prepared.length, truncated },
   })
 
   const stamp = new Date().toISOString().slice(0, 10)
@@ -158,7 +154,8 @@ export async function generateExport({
   for (const r of sheets.repeats) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r.aoa), excelSheetName(r.name))
   }
-  const body = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+  // 'array' → Uint8Array, which the browser wraps in a Blob for download.
+  const body = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
   return {
     filename: `${form.slug}-${stamp}.xlsx`,
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

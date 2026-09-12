@@ -6,7 +6,8 @@
 # Dependencies
 node_modules/
 
-# Next.js
+# Build output
+/dist/
 /.next/
 /out/
 next-env.d.ts

@@ -1,8 +1,7 @@
 // @ts-check
 // Audit log reader (PRD §7 screen 7). Admin-only (enforced by RLS on audit_log and by
 // requireRole at the page). Read-only; the log is never updated or deleted.
-import 'server-only'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase'
 
 /**
  * @param {{ action?: string, entityType?: string, from?: string, to?: string }} filters

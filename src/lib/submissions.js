@@ -1,10 +1,10 @@
 // @ts-check
 // Runtime data-collection service (PRD §4, §6, §7). Loads deployed forms for filling,
 // records submissions idempotently, and lists a user's own submissions.
-import 'server-only'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient, supabase } from '@/lib/supabase'
 import { getCurrentUser } from '@/lib/auth'
+import { rateLimit } from '@/lib/rate-limit'
+import { submissionInputSchema } from '@/lib/schemas'
 
 export const ATTACHMENT_BUCKET = 'attachments'
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // §10
@@ -196,8 +196,33 @@ export async function recordSubmission({ userId, role, input }) {
 }
 
 /**
- * Store an uploaded image in the private attachments bucket (service role) and return its
- * path. Called per-image before submit; the path is then referenced in the submission body.
+ * Client submit flow (replaces the old POST /api/submissions route). Validates input,
+ * applies the same per-user rate limit, then records the submission idempotently under the
+ * current user's session (RLS enforces authorization). Returns { created }.
+ * @param {import('zod').infer<typeof submissionInputSchema>} input
+ */
+export async function submitFilledForm(input) {
+  const current = await getCurrentUser()
+  if (!current) throw new Error('Not authenticated.')
+
+  const parsed = submissionInputSchema.safeParse(input)
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message || 'Invalid submission.')
+  }
+
+  const limit = await rateLimit(`submit:${current.user.id}`, 30, 60)
+  if (!limit.ok) throw new Error('Too many submissions. Please slow down.')
+
+  return recordSubmission({
+    userId: current.user.id,
+    role: current.profile.role,
+    input: parsed.data,
+  })
+}
+
+/**
+ * Store an uploaded image in the private attachments bucket and return its path. Called
+ * per-image before submit; the path is then referenced in the submission body.
  * @param {{ submissionId: string, questionName: string, file: File }} args
  */
 export async function storeAttachment({ submissionId, questionName, file }) {
@@ -207,13 +232,12 @@ export async function storeAttachment({ submissionId, questionName, file }) {
   if (file.size > MAX_IMAGE_BYTES) {
     throw new Error('Image exceeds the 10 MB limit.')
   }
-  const admin = createAdminClient()
   const ext = file.name?.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
   // Random suffix so multiple photos for the same question never collide/overwrite.
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const path = `${submissionId}/${questionName}-${unique}.${ext}`
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const { error } = await admin.storage.from(ATTACHMENT_BUCKET).upload(path, buffer, {
+  // Upload the File directly from the browser (storage RLS governs access — migration 0009).
+  const { error } = await supabase.storage.from(ATTACHMENT_BUCKET).upload(path, file, {
     contentType: file.type,
     upsert: true,
   })
@@ -221,10 +245,9 @@ export async function storeAttachment({ submissionId, questionName, file }) {
   return { storage_path: path, mime_type: file.type, size_bytes: file.size }
 }
 
-/** Signed URL for viewing a private attachment (used by the review queue in Phase 5). */
+/** Signed URL for viewing a private attachment (used by the review queue + exports). */
 export async function signedAttachmentUrl(storagePath, expiresIn = 300) {
-  const admin = createAdminClient()
-  const { data, error } = await admin.storage
+  const { data, error } = await supabase.storage
     .from(ATTACHMENT_BUCKET)
     .createSignedUrl(storagePath, expiresIn)
   if (error) throw new Error(error.message)

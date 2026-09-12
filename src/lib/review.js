@@ -3,9 +3,7 @@
 // renders a submission against its own schema version for reading, and records review
 // actions. Review NEVER mutates submission data — a DB trigger flips status from the
 // inserted reviews row; the self-review block is enforced in RLS and re-checked here.
-import 'server-only'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase'
 import { signedAttachmentUrl } from '@/lib/submissions'
 import { labelFor, textFor } from '@/lib/runtime-eval'
 
@@ -232,12 +230,10 @@ export async function submitReview({ userId, submissionId, action, comment }) {
     )
   }
 
-  const admin = createAdminClient()
-  await admin.from('audit_log').insert({
-    actor_id: userId,
-    entity_type: 'submission',
-    entity_id: submissionId,
-    action: `review.${action}`,
-    meta: { comment: comment || null },
+  await supabase.rpc('log_audit', {
+    p_entity_type: 'submission',
+    p_entity_id: submissionId,
+    p_action: `review.${action}`,
+    p_meta: { comment: comment || null },
   })
 }

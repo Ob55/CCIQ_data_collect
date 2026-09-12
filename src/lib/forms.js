@@ -2,10 +2,7 @@
 // Server-side forms service (PRD §5.5, §7). Handles the form/version lifecycle:
 // parse+create draft, add versions, deploy/retire, assignments. Every mutation writes an
 // audit_log row via the service role (audit_log is server-only).
-import 'server-only'
-import { randomUUID } from 'node:crypto'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient, supabase } from '@/lib/supabase'
 import { parseXlsform } from '@/lib/xlsform/parse'
 import { buildRuntimeSchema } from '@/lib/xlsform/builder'
 import { XlsformError } from '@/lib/xlsform/errors'
@@ -30,7 +27,7 @@ function slugify(title) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40)
-  return `${base || 'form'}-${randomUUID().slice(0, 6)}`
+  return `${base || 'form'}-${crypto.randomUUID().slice(0, 6)}`
 }
 
 /** Validate an uploaded File (extension, mime, size) then return its bytes. §10 */
@@ -47,7 +44,7 @@ async function readUpload(file) {
   if (file.size > MAX_XLSFORM_BYTES) {
     throw new XlsformError('The file exceeds the 10 MB limit.')
   }
-  return Buffer.from(await file.arrayBuffer())
+  return new Uint8Array(await file.arrayBuffer())
 }
 
 /** Parse an upload WITHOUT persisting anything — used for the pre-confirm report (§7). */
@@ -56,22 +53,24 @@ export async function parseUploadPreview(file) {
   return parseXlsform(buffer) // throws XlsformError on any problem
 }
 
-async function writeAudit(actorId, entityType, entityId, action, meta = {}) {
-  const admin = createAdminClient()
-  await admin.from('audit_log').insert({
-    actor_id: actorId,
-    entity_type: entityType,
-    entity_id: String(entityId),
-    action,
-    meta,
+// actorId is kept in the signature for call-site compatibility, but the audit RPC forces
+// actor_id = auth.uid() server-side, so it's ignored here.
+async function writeAudit(_actorId, entityType, entityId, action, meta = {}) {
+  await supabase.rpc('log_audit', {
+    p_entity_type: entityType,
+    p_entity_id: String(entityId),
+    p_action: action,
+    p_meta: meta,
   })
 }
 
-/** Upload the original workbook to the private bucket via the service role. */
+/** Upload the original workbook to the private bucket (storage RLS — migration 0009). */
 async function storeSource(formId, versionNo, buffer) {
-  const admin = createAdminClient()
   const path = `${formId}/v${versionNo}.xlsx`
-  const { error } = await admin.storage.from(XLSFORM_BUCKET).upload(path, buffer, {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+  const { error } = await supabase.storage.from(XLSFORM_BUCKET).upload(path, blob, {
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     upsert: true,
   })

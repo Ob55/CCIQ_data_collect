@@ -311,7 +311,8 @@ export async function parseXlsform(buffer) {
   const XLSX = await import('xlsx')
   let wb
   try {
-    wb = XLSX.read(buffer, { type: 'buffer' })
+    // 'array' works in both Node and the browser (accepts a Uint8Array / ArrayBuffer).
+    wb = XLSX.read(buffer, { type: 'array' })
   } catch (err) {
     // A malicious/corrupt workbook must fail the parse cleanly, not crash the server (§10).
     throw new XlsformError(`Could not read the spreadsheet: ${err.message}`)

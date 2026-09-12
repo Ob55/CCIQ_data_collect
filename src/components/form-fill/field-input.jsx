@@ -1,8 +1,7 @@
-'use client'
-
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { storeAttachment } from '@/lib/submissions'
 import { labelFor, textFor } from '@/lib/runtime-eval'
 
 /** Space-delimited select_multiple helpers (ODK storage format). */
@@ -205,14 +204,8 @@ function ImageUpload({ value, onChange, submissionId, questionName, disabled }) 
     const added = []
     try {
       for (const file of files) {
-        const fd = new FormData()
-        fd.set('file', file)
-        fd.set('submission_id', submissionId)
-        fd.set('question_name', questionName)
-        const res = await fetch('/api/attachments', { method: 'POST', body: fd })
-        const json = await res.json()
-        if (!res.ok) throw new Error(json.error || 'Upload failed')
-        added.push({ storage_path: json.storage_path, mime_type: json.mime_type, size_bytes: json.size_bytes })
+        const stored = await storeAttachment({ submissionId, questionName, file })
+        added.push(stored)
       }
       onChange([...items, ...added])
     } catch (e2) {
