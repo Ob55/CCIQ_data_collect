@@ -1,11 +1,15 @@
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { profileSchema } from '@/lib/schemas'
 
 /**
  * Client-side auth context. Replaces the Next.js middleware + server `getCurrentUser()`:
  * holds the Supabase session and the user's validated profile (role read from the
- * `profiles` table, never trusted from the JWT). Re-runs on every auth state change.
+ * `profiles` table, never trusted from the JWT).
+ *
+ * IMPORTANT: never `await` a Supabase database call *inside* the onAuthStateChange
+ * callback — the auth client holds a lock there and it deadlocks. We only store the
+ * session in the callback and load the profile from a separate effect keyed on the user id.
  */
 const AuthContext = createContext(null)
 
@@ -22,30 +26,46 @@ async function loadProfile(userId) {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loadingSession, setLoadingSession] = useState(true)
+  const [loadingProfile, setLoadingProfile] = useState(true)
 
-  const refresh = useCallback(async (activeSession) => {
-    const s = activeSession ?? (await supabase.auth.getSession()).data.session
-    setSession(s)
-    setProfile(s?.user ? await loadProfile(s.user.id) : null)
+  // 1) Track the session. Only synchronous state updates in the auth callback.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoadingSession(false)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s)
+    })
+    return () => sub.subscription.unsubscribe()
   }, [])
 
+  // 2) Load the profile whenever the signed-in user changes (outside the auth lock).
+  const userId = session?.user?.id ?? null
   useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      await refresh()
-      if (mounted) setLoading(false)
-    })()
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      // Keep context in sync with sign-in / sign-out / token refresh.
-      refresh(s)
-    })
-    return () => {
-      mounted = false
-      sub.subscription.unsubscribe()
+    if (!userId) {
+      setProfile(null)
+      setLoadingProfile(false)
+      return
     }
-  }, [refresh])
+    let cancelled = false
+    setLoadingProfile(true)
+    loadProfile(userId)
+      .then((p) => {
+        if (!cancelled) setProfile(p)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProfile(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  // Guards wait until the session is known AND (if signed in) the profile has resolved,
+  // so pages never render with a null role.
+  const loading = loadingSession || (!!session && loadingProfile)
 
   const value = {
     session,
