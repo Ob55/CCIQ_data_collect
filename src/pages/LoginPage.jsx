@@ -83,7 +83,6 @@ export function LoginPage() {
           </form>
         </CardContent>
       </Card>
-      <p className="text-xs text-brand-foreground/60">CleanCook Data Collection — internal use only</p>
     </main>
   )
 }
