@@ -19,6 +19,10 @@ export const supabase = createSupabaseClient(url, anonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    // Store the session in sessionStorage, not localStorage: it survives a page refresh
+    // within the same tab, but closing the tab/window ends the session so the user must
+    // sign in again next time. (Falls back gracefully if sessionStorage is unavailable.)
+    storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
   },
 })
 

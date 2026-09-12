@@ -1,37 +1,31 @@
 import { useEffect, useState } from 'react'
+import { useAuth } from '@/auth/AuthProvider'
 
-// Brand intro splash. Plays once per session, on desktop only, before the app is used.
-// The animation lives in /public/intro.html (self-contained canvas + Web Audio); we overlay
-// it in a fixed iframe and remove it when it posts 'cleancookiq:ready'. The app renders
-// behind it, so auth/routing is ready the moment the splash clears.
-const SESSION_KEY = 'ccIntroSeen'
-
-function shouldPlay() {
-  try {
-    if (sessionStorage.getItem(SESSION_KEY) === '1') return false
-  } catch {
-    /* private mode — just play */
-  }
-  // Desktop only.
+// Brand intro splash. Plays on desktop whenever the user is NOT signed in (i.e. on the
+// login page), including on every refresh of that page. It does not play for signed-in
+// users. The animation lives in /public/intro.html (self-contained canvas + Web Audio);
+// we overlay it in a fixed iframe and remove it when it posts 'cleancookiq:ready'.
+function isDesktop() {
   return typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches
 }
 
 export function IntroGate({ children }) {
-  const [playing, setPlaying] = useState(() => shouldPlay())
+  const { session, loading } = useAuth()
+  const [desktop] = useState(isDesktop)
+  const [dismissed, setDismissed] = useState(false)
+
+  // Only once auth is resolved and there's no session (logged out). A refresh remounts this
+  // component, so `dismissed` resets and the intro plays again on the login page.
+  const playing = desktop && !loading && !session && !dismissed
 
   useEffect(() => {
     if (!playing) return
-    try {
-      sessionStorage.setItem(SESSION_KEY, '1')
-    } catch {
-      /* ignore */
-    }
     const onMessage = (e) => {
-      if (e.data === 'cleancookiq:ready') setPlaying(false)
+      if (e.data === 'cleancookiq:ready') setDismissed(true)
     }
     window.addEventListener('message', onMessage)
     // Safety net: never trap the user behind the splash if the signal is missed.
-    const timer = setTimeout(() => setPlaying(false), 12000)
+    const timer = setTimeout(() => setDismissed(true), 12000)
     return () => {
       window.removeEventListener('message', onMessage)
       clearTimeout(timer)
