@@ -1,0 +1,24 @@
+{
+  "name": "@cleancook/mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "CleanCook Data Collection — read-only MCP server over submission data (PRD Phase 8). Plain JavaScript.",
+  "bin": {
+    "cleancook-mcp": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@supabase/supabase-js": "^2.116.0",
+    "dotenv": "^16.4.7",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}
